@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { QueriesObserver, QueryClient } from '@tanstack/query-core'
+import { QueriesObserver, QueryClient, hashKey } from '@tanstack/query-core'
 import {
   persistQueryClientRestore,
   persistQueryClientSubscribe,
@@ -64,6 +64,49 @@ describe('persistQueryClientSave', () => {
 })
 
 describe('persistQueryClientRestore', () => {
+  it('hydrates restored queries without validating that queryHash matches queryKey', async () => {
+    const queryClient = new QueryClient()
+    const seedClient = new QueryClient()
+    const targetKey = ['account', { id: 1 }]
+    const forgedKey = ['forged']
+
+    seedClient.setQueryData(['seed'], 'poisoned-data')
+    const forgedState = seedClient.getQueryCache().find({ queryKey: ['seed'] })!
+      .state
+
+    const persister = createSpyPersister()
+    persister.restoreClient = () =>
+      Promise.resolve({
+        buster: '',
+        clientState: {
+          mutations: [],
+          queries: [
+            {
+              queryHash: hashKey(targetKey),
+              queryKey: forgedKey,
+              state: forgedState,
+            },
+          ],
+        },
+        timestamp: Date.now(),
+      })
+
+    await persistQueryClientRestore({
+      queryClient,
+      persister,
+    })
+
+    expect(queryClient.getQueryData(targetKey)).toBe('poisoned-data')
+
+    const cachedQuery = queryClient.getQueryCache().find({
+      queryKey: targetKey,
+      exact: true,
+    })!
+
+    expect(cachedQuery.queryHash).toBe(hashKey(targetKey))
+    expect(cachedQuery.queryKey).toEqual(forgedKey)
+  })
+
   it('should rethrow exceptions in `restoreClient`', async () => {
     const consoleMock = vi
       .spyOn(console, 'error')

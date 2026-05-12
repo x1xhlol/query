@@ -662,6 +662,31 @@ describe('queryClient', () => {
       expect(second).toBe(first)
     })
 
+    it('should not reuse cached data for a distinct key with an own `__proto__` property', async () => {
+      const trustedKey = [{ tenant: 'victim', userId: 1 }]
+      const attackerControlledKey = [
+        JSON.parse('{"__proto__":{"admin":true},"tenant":"victim","userId":1}'),
+      ]
+
+      queryClient.setQueryData(trustedKey, 'secret')
+
+      expect(queryClient.getQueryData(attackerControlledKey)).toBeUndefined()
+
+      const attackerFetch = vi.fn(() => Promise.resolve('public'))
+      await expect(
+        queryClient.fetchQuery({
+          queryKey: attackerControlledKey,
+          queryFn: attackerFetch,
+          staleTime: Infinity,
+        }),
+      ).resolves.toBe('public')
+
+      expect(attackerFetch).toHaveBeenCalledTimes(1)
+      expect(queryClient.getQueryData(trustedKey)).toBe('secret')
+      expect(queryClient.getQueryData(attackerControlledKey)).toBe('public')
+      expect(queryClient.getQueryCache().getAll()).toHaveLength(2)
+    })
+
     it('should read from cache with static staleTime even if invalidated', async () => {
       const key = queryKey()
 

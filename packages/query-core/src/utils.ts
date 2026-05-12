@@ -225,6 +225,24 @@ export function hashQueryKeyByOptions<TQueryKey extends QueryKey = QueryKey>(
   return hashFn(queryKey)
 }
 
+function safeSetObjectProperty(
+  object: Record<string | number, any>,
+  key: string | number,
+  value: any,
+) {
+  if (key === '__proto__') {
+    Object.defineProperty(object, key, {
+      configurable: true,
+      enumerable: true,
+      value,
+      writable: true,
+    })
+    return
+  }
+
+  object[key] = value
+}
+
 /**
  * Default query & mutation keys hash function.
  * Hashes the value into a stable hash.
@@ -235,12 +253,14 @@ export function hashKey(queryKey: QueryKey | MutationKey): string {
       ? Object.keys(val)
           .sort()
           .reduce((result, key) => {
-            result[key] = val[key]
+            safeSetObjectProperty(result, key, val[key])
             return result
           }, {} as any)
       : val,
   )
 }
+
+const hasOwn = Object.prototype.hasOwnProperty
 
 /**
  * Checks if key `b` partially matches with key `a`.
@@ -256,13 +276,13 @@ export function partialMatchKey(a: any, b: any): boolean {
   }
 
   if (a && b && typeof a === 'object' && typeof b === 'object') {
-    return Object.keys(b).every((key) => partialMatchKey(a[key], b[key]))
+    return Object.keys(b).every(
+      (key) => hasOwn.call(a, key) && partialMatchKey(a[key], b[key]),
+    )
   }
 
   return false
 }
-
-const hasOwn = Object.prototype.hasOwnProperty
 
 /**
  * This function returns `a` if `b` is deeply equal.
@@ -295,7 +315,7 @@ export function replaceEqualDeep(a: any, b: any, depth = 0): any {
     const bItem = b[key]
 
     if (aItem === bItem) {
-      copy[key] = aItem
+      safeSetObjectProperty(copy, key, aItem)
       if (array ? i < aSize : hasOwn.call(a, key)) equalItems++
       continue
     }
@@ -306,12 +326,12 @@ export function replaceEqualDeep(a: any, b: any, depth = 0): any {
       typeof aItem !== 'object' ||
       typeof bItem !== 'object'
     ) {
-      copy[key] = bItem
+      safeSetObjectProperty(copy, key, bItem)
       continue
     }
 
     const v = replaceEqualDeep(aItem, bItem, depth + 1)
-    copy[key] = v
+    safeSetObjectProperty(copy, key, v)
     if (v === aItem) equalItems++
   }
 

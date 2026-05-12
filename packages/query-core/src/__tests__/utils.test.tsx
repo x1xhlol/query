@@ -165,6 +165,13 @@ describe('core/utils', () => {
       const b = [{ a: null, c: 'c', d: [{ d: 'd ' }] }]
       expect(partialMatchKey(a, b)).toEqual(false)
     })
+
+    it('should not treat an own `__proto__` property as a partial match', () => {
+      const a = [{ id: 1 }]
+      const b = [JSON.parse('{"__proto__":{},"id":1}')]
+
+      expect(partialMatchKey(a, b)).toEqual(false)
+    })
   })
 
   describe('replaceEqualDeep', () => {
@@ -242,6 +249,22 @@ describe('core/utils', () => {
       const prev = { a: 'a' }
       const next = { a: 'a' }
       expect(replaceEqualDeep(prev, next)).toBe(prev)
+    })
+
+    it('should preserve an own `__proto__` property without mutating the result prototype', () => {
+      const prev = {}
+      const next = JSON.parse('{"__proto__":{"polluted":123},"safe":1}')
+      const result = replaceEqualDeep(prev, next)
+
+      expect(result).toEqual(next)
+      expect(Object.keys(result)).toContain('__proto__')
+      expect(Object.prototype.hasOwnProperty.call(result, '__proto__')).toBe(
+        true,
+      )
+      expect(Object.getPrototypeOf(result)).toBe(Object.prototype)
+      expect((result as Record<string, unknown>)['__proto__']).toEqual({
+        polluted: 123,
+      })
     })
 
     it('should replace different values in objects', () => {
@@ -534,6 +557,15 @@ describe('core/utils', () => {
       const nested2 = [{ b: 2, a: { c: 3, d: 4 } }]
 
       expect(hashKey(nested1)).toEqual(hashKey(nested2))
+    })
+
+    it('should include an own `__proto__` property in the hash', () => {
+      const plainKey = [{ id: 1 }]
+      const protoKey = [JSON.parse('{"__proto__":{"admin":true},"id":1}')]
+      const expectedKey = [{ ['__proto__']: { admin: true }, id: 1 }]
+
+      expect(hashKey(protoKey)).not.toEqual(hashKey(plainKey))
+      expect(hashKey(protoKey)).toEqual(JSON.stringify(expectedKey))
     })
   })
 

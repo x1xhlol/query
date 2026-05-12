@@ -7,6 +7,7 @@ import {
   QueryObserver,
   dehydrate,
   focusManager,
+  hashKey,
   hydrate,
   onlineManager,
   skipToken,
@@ -660,6 +661,74 @@ describe('queryClient', () => {
       })
 
       expect(second).toBe(first)
+    })
+
+    it('should treat own __proto__ properties as a cache-key collision and reuse cached data', async () => {
+      const maliciousFilter = JSON.parse(
+        '{"id":1,"__proto__":{"role":"admin"}}',
+      ) as { id: number }
+      const benignFilter = { id: 1 }
+      const maliciousKey = ['user', maliciousFilter] as const
+      const benignKey = ['user', benignFilter] as const
+
+      expect(hashKey(maliciousKey)).toBe(hashKey(benignKey))
+
+      const attackerQueryFn = vi.fn(() => Promise.resolve('attacker-data'))
+      const victimQueryFn = vi.fn(() => Promise.resolve('victim-data'))
+
+      await expect(
+        queryClient.fetchQuery({
+          queryKey: maliciousKey,
+          queryFn: attackerQueryFn,
+          staleTime: 1000,
+        }),
+      ).resolves.toBe('attacker-data')
+
+      await expect(
+        queryClient.fetchQuery({
+          queryKey: benignKey,
+          queryFn: victimQueryFn,
+          staleTime: 1000,
+        }),
+      ).resolves.toBe('attacker-data')
+
+      expect(attackerQueryFn).toHaveBeenCalledTimes(1)
+      expect(victimQueryFn).not.toHaveBeenCalled()
+
+      const cachedQuery = queryCache.find({ queryKey: benignKey, exact: true })!
+      expect(cachedQuery.queryKey).toBe(maliciousKey)
+      expect(cachedQuery.state.data).toBe('attacker-data')
+    })
+
+    it('should call the second queryFn with the first colliding queryKey after invalidation', async () => {
+      const maliciousFilter = JSON.parse(
+        '{"id":1,"__proto__":{"role":"admin"}}',
+      ) as { id: number }
+      const benignFilter = { id: 1 }
+      const maliciousKey = ['user', maliciousFilter] as const
+      const benignKey = ['user', benignFilter] as const
+
+      await queryClient.fetchQuery({
+        queryKey: maliciousKey,
+        queryFn: () => Promise.resolve('attacker-data'),
+      })
+
+      await queryClient.invalidateQueries({
+        queryKey: maliciousKey,
+        refetchType: 'none',
+      })
+
+      const victimQueryFn = vi.fn(({ queryKey }) => Promise.resolve(queryKey))
+
+      await expect(
+        queryClient.fetchQuery({
+          queryKey: benignKey,
+          queryFn: victimQueryFn,
+        }),
+      ).resolves.toBe(maliciousKey)
+
+      expect(victimQueryFn).toHaveBeenCalledTimes(1)
+      expect(victimQueryFn.mock.calls[0]![0].queryKey).toBe(maliciousKey)
     })
 
     it('should read from cache with static staleTime even if invalidated', async () => {

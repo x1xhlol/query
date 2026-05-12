@@ -633,6 +633,21 @@ describe('Devtools', () => {
   })
 
   describe('data edit', () => {
+    it('should render HTML-like query data as text instead of active DOM', () => {
+      const payload = '<img src=x onerror="globalThis.__tsqdXss = 1">'
+      queryClient.setQueryData(['html-data'], { html: payload })
+      const rendered = renderDevtools({ initialIsOpen: true })
+
+      fireEvent.click(rendered.getByLabelText(/Query key \["html-data"\]/))
+      fireEvent.click(rendered.getByLabelText('Bulk Edit Data'))
+
+      expect(
+        rendered.getByLabelText('Edit query data as JSON'),
+      ).toHaveValue(JSON.stringify({ html: payload }, null, 2))
+      expect(rendered.container.querySelector('img')).toBeNull()
+      expect((globalThis as any).__tsqdXss).toBeUndefined()
+    })
+
     it('should switch to data editor when "Bulk Edit Data" is clicked', () => {
       queryClient.setQueryData(['edit-data'], { name: 'a' })
       const rendered = renderDevtools({ initialIsOpen: true })

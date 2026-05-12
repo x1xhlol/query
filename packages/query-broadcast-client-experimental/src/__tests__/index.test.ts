@@ -28,4 +28,27 @@ describe('broadcastQueryClient', () => {
     unsubscribe()
     expect(queryCache.hasListeners()).toBe(false)
   })
+
+  it('should sync updates between clients on the same broadcast channel', async () => {
+    const receivingClient = new QueryClient()
+    const unsubscribe = broadcastQueryClient({
+      queryClient,
+      broadcastChannel: 'shared_test_channel',
+    })
+    const unsubscribeReceiver = broadcastQueryClient({
+      queryClient: receivingClient,
+      broadcastChannel: 'shared_test_channel',
+    })
+
+    queryClient.setQueryData(['shared'], { secret: 'data' })
+
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(receivingClient.getQueryData(['shared'])).toEqual({
+      secret: 'data',
+    })
+
+    unsubscribe()
+    unsubscribeReceiver()
+  })
 })
